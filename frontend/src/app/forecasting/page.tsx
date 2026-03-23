@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -61,18 +62,53 @@ interface ForecastData {
   message?: string
 }
 
-export default function ForecastingPage() {
-  const [selectedDrug, setSelectedDrug] = useState('')
+function ForecastingContent() {
+  const searchParams = useSearchParams()
+  const initialDrug = searchParams.get('drug') || ''
+
+  const [selectedDrug, setSelectedDrug] = useState(initialDrug)
   const [horizonDays, setHorizonDays] = useState(30)
   const [model, setModel] = useState('prophet')
   const [forecastData, setForecastData] = useState<ForecastData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [drugs, setDrugs] = useState<string[]>([])
 
-  const drugs = [
-    'Metformin', 'Aspirin', 'Insulin', 'Amoxicillin', 'Omeprazole',
-    'Losartan', 'Simvastatin', 'Albuterol', 'Warfarin', 'Furosemide'
-  ]
+  useEffect(() => {
+    fetchDrugs()
+  }, [])
+
+  // Auto-run forecast if drug is provided via URL
+  useEffect(() => {
+    if (initialDrug && drugs.length > 0) {
+      if (!forecastData && !isLoading) {
+        // If selectedDrug was initialized with initialDrug, this is safe
+        // But we should ensure we are using the param value
+        runForecast(initialDrug)
+      }
+    } else if (initialDrug) {
+      // If drugs haven't loaded yet but we have an initial drug, 
+      // set it as selected so the UI reflects it immediately
+      setSelectedDrug(initialDrug)
+    }
+  }, [initialDrug, drugs])
+
+  const fetchDrugs = async () => {
+    try {
+      const response = await fetch('/api/v1/drugs')
+      if (response.ok) {
+        const data = await response.json()
+        const drugNames = data.map((d: any) => d.name)
+        setDrugs(drugNames)
+      } else {
+        console.error('Failed to fetch drugs list')
+        setDrugs(['Insulin', 'Metformin', 'Aspirin', 'Amoxicillin', 'Omeprazole'])
+      }
+    } catch (err) {
+      console.error('Error fetching drugs:', err)
+      setDrugs(['Insulin', 'Metformin', 'Aspirin', 'Amoxicillin', 'Omeprazole'])
+    }
+  }
 
   const normalizeForecast = (data: ForecastApiResponse): ForecastData => ({
     forecast: (data.forecast || []).map((point) => ({
@@ -97,9 +133,9 @@ export default function ForecastingPage() {
     return `${value}${suffix}`
   }
 
-  const runForecast = async () => {
-    if (!selectedDrug) {
-      setError('لطفاً یک دارو انتخاب کنید')
+  const runForecast = async (drugToForecast = selectedDrug) => {
+    if (!drugToForecast) {
+      setError('Please select a drug')
       return
     }
 
@@ -115,14 +151,14 @@ export default function ForecastingPage() {
         body: JSON.stringify({
           entity_type: 'branch',
           entity_id: 'MAIN_BRANCH',
-          item_id: selectedDrug,
+          item_id: drugToForecast,
           horizon_days: horizonDays,
           model: model
         })
       })
 
       if (!response.ok) {
-        setError('خطا در دریافت پیش‌بینی')
+        setError('Error fetching forecast')
         setForecastData(null)
         return
       }
@@ -131,7 +167,7 @@ export default function ForecastingPage() {
       const normalized = normalizeForecast(apiData)
 
       if (normalized.status !== 'success' || !normalized.forecast.length) {
-        setError(apiData.message || 'پیش‌بینی معتبری برنگشت')
+        setError(apiData.message || 'No valid forecast returned')
         setForecastData(null)
         return
       }
@@ -139,7 +175,7 @@ export default function ForecastingPage() {
       setForecastData(normalized)
     } catch (err) {
       console.error('Forecast error:', err)
-      setError('خطا در اتصال به سرور')
+      setError('Server connection error')
       setForecastData(null)
     } finally {
       setIsLoading(false)
@@ -151,58 +187,63 @@ export default function ForecastingPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">پیش‌بینی تقاضای دارویی</h1>
-          <p className="text-gray-600 mt-1">استفاده از مدل‌های هوش مصنوعی برای پیش‌بینی نیاز بازار</p>
+          <h1 className="text-3xl font-bold text-gray-900">Pharmaceutical Demand Forecasting</h1>
+          <p className="text-gray-600 mt-1">Using AI models to predict market demand</p>
         </div>
       </div>
 
       {/* Controls */}
       <Card>
         <CardHeader>
-          <CardTitle>پارامترهای پیش‌بینی</CardTitle>
+          <CardTitle>Forecast Parameters</CardTitle>
           <CardDescription>
-            انتخاب دارو و تنظیمات مدل پیش‌بینی
+            Select drug and forecast model settings
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                انتخاب دارو
+                Select Drug
               </label>
               <Select value={selectedDrug} onValueChange={setSelectedDrug}>
                 <SelectTrigger>
-                  <SelectValue placeholder="انتخاب دارو..." />
+                  <SelectValue placeholder="Select drug..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {drugs.map(drug => (
-                    <SelectItem key={drug} value={drug}>{drug}</SelectItem>
-                  ))}
+                  {drugs.length > 0 ? (
+                    drugs.map(drug => (
+                      <SelectItem key={drug} value={drug}>{drug}</SelectItem>
+                    ))
+                  ) : (
+                    // Fallback if drugs haven't loaded yet but we have selectedDrug from URL
+                    selectedDrug ? <SelectItem value={selectedDrug}>{selectedDrug}</SelectItem> : null
+                  )}
                 </SelectContent>
               </Select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                افق زمانی (روز)
+                Time Horizon (Days)
               </label>
               <Select value={horizonDays.toString()} onValueChange={(value) => setHorizonDays(parseInt(value))}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="7">7 روز</SelectItem>
-                  <SelectItem value="14">14 روز</SelectItem>
-                  <SelectItem value="30">30 روز</SelectItem>
-                  <SelectItem value="60">60 روز</SelectItem>
-                  <SelectItem value="90">90 روز</SelectItem>
+                  <SelectItem value="7">7 Days</SelectItem>
+                  <SelectItem value="14">14 Days</SelectItem>
+                  <SelectItem value="30">30 Days</SelectItem>
+                  <SelectItem value="60">60 Days</SelectItem>
+                  <SelectItem value="90">90 Days</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                مدل پیش‌بینی
+                Prediction Model
               </label>
               <Select value={model} onValueChange={setModel}>
                 <SelectTrigger>
@@ -211,26 +252,26 @@ export default function ForecastingPage() {
                 <SelectContent>
                   <SelectItem value="prophet">Prophet</SelectItem>
                   <SelectItem value="lstm">LSTM</SelectItem>
-                  <SelectItem value="moving_average">میانگین متحرک</SelectItem>
+                  <SelectItem value="moving_average">Moving Average</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="flex items-end">
               <Button
-                onClick={runForecast}
+                onClick={() => runForecast(selectedDrug)}
                 disabled={isLoading}
                 className="w-full"
               >
                 {isLoading ? (
                   <>
-                    <RefreshCw className="h-4 w-4 ml-2 animate-spin" />
-                    در حال پیش‌بینی...
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Forecasting...
                   </>
                 ) : (
                   <>
-                    <TrendingUp className="h-4 w-4 ml-2" />
-                    اجرای پیش‌بینی
+                    <TrendingUp className="h-4 w-4 mr-2" />
+                    Run Forecast
                   </>
                 )}
               </Button>
@@ -240,7 +281,7 @@ export default function ForecastingPage() {
           {error && (
             <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
               <div className="flex items-center">
-                <AlertCircle className="h-5 w-5 text-red-600 ml-2" />
+                <AlertCircle className="h-5 w-5 text-red-600 mr-2" />
                 <span className="text-red-800 text-sm">{error}</span>
               </div>
             </div>
@@ -255,7 +296,7 @@ export default function ForecastingPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">دقت مدل (MAPE)</CardTitle>
+                <CardTitle className="text-sm font-medium">Model Accuracy (MAPE)</CardTitle>
                 <Target className="h-4 w-4 text-blue-600" />
               </CardHeader>
               <CardContent>
@@ -263,7 +304,7 @@ export default function ForecastingPage() {
                   {formatMetric(forecastData.metrics.mape, '%')}
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  خطای میانگین درصد
+                  Mean Absolute Percentage Error
                 </p>
               </CardContent>
             </Card>
@@ -278,7 +319,7 @@ export default function ForecastingPage() {
                   {formatMetric(forecastData.metrics.rmse)}
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  ریشه خطای مربع میانگین
+                  Root Mean Square Error
                 </p>
               </CardContent>
             </Card>
@@ -293,7 +334,7 @@ export default function ForecastingPage() {
                   {formatMetric(forecastData.metrics.mae)}
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  خطای مطلق میانگین
+                  Mean Absolute Error
                 </p>
               </CardContent>
             </Card>
@@ -302,11 +343,11 @@ export default function ForecastingPage() {
           {/* Forecast Chart */}
           <Card>
             <CardHeader>
-              <CardTitle>نمودار پیش‌بینی تقاضا</CardTitle>
+              <CardTitle>Demand Forecast Chart</CardTitle>
               <CardDescription>
-                پیش‌بینی تقاضا برای {selectedDrug} به مدت {horizonDays} روز آینده
-                <Badge variant="outline" className="mr-2">
-                  مدل: {forecastData.model}
+                Demand forecast for {selectedDrug} for the next {horizonDays} days
+                <Badge variant="outline" className="ml-2">
+                  Model: {forecastData.model}
                 </Badge>
               </CardDescription>
             </CardHeader>
@@ -318,12 +359,12 @@ export default function ForecastingPage() {
                     <XAxis
                       dataKey="date"
                       tick={{ fontSize: 12 }}
-                      tickFormatter={(value) => new Date(value).toLocaleDateString('fa-IR')}
+                      tickFormatter={(value) => new Date(value).toLocaleDateString('en-US')}
                     />
                     <YAxis tick={{ fontSize: 12 }} />
                     <Tooltip
-                      labelFormatter={(value) => new Date(value).toLocaleDateString('fa-IR')}
-                      formatter={(value) => [value?.toLocaleString() || '0', 'مقدار پیش‌بینی']}
+                      labelFormatter={(value) => new Date(value).toLocaleDateString('en-US')}
+                      formatter={(value) => [value?.toLocaleString() || '0', 'Forecast Value']}
                     />
                     <Line
                       type="monotone"
@@ -357,9 +398,9 @@ export default function ForecastingPage() {
           {/* Forecast Table */}
           <Card>
             <CardHeader>
-              <CardTitle>جدول پیش‌بینی</CardTitle>
+              <CardTitle>Forecast Table</CardTitle>
               <CardDescription>
-                جزئیات پیش‌بینی روزانه
+                Daily forecast details
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -367,17 +408,17 @@ export default function ForecastingPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        تاریخ
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Date
                       </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        پیش‌بینی
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Forecast
                       </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        حداقل
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Lower Bound
                       </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        حداکثر
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Upper Bound
                       </th>
                     </tr>
                   </thead>
@@ -385,7 +426,7 @@ export default function ForecastingPage() {
                     {forecastData.forecast.slice(0, 10).map((item, index) => (
                       <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {new Date(item.date).toLocaleDateString('fa-IR')}
+                          {new Date(item.date).toLocaleDateString('en-US')}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600 font-medium">
                           {item.predicted.toLocaleString()}
@@ -406,5 +447,13 @@ export default function ForecastingPage() {
         </>
       )}
     </div>
+  )
+}
+
+export default function ForecastingPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ForecastingContent />
+    </Suspense>
   )
 }

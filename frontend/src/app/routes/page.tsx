@@ -46,7 +46,7 @@ export default function RoutesPage() {
 
   const optimizeRoute = async () => {
     if (!depotId || destinations.length === 0) {
-      alert('لطفاً انبار مبدأ و مقاصد را انتخاب کنید')
+      alert('Please select a depot and destinations')
       return
     }
 
@@ -70,20 +70,12 @@ export default function RoutesPage() {
         const data = await response.json()
         setRoutePlan(data)
       } else {
-        alert('خطا در بهینه‌سازی مسیر')
+        const errorData = await response.json().catch(() => ({}));
+        alert(`Route optimization error: ${errorData.detail || response.statusText || 'Unknown error'}`)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Route optimization error:', error)
-      // Mock data for demonstration
-      setRoutePlan({
-        sequence: [depotId, ...destinations, depotId],
-        total_distance_km: 245.5,
-        total_time_hours: 6.2,
-        total_cost_usd: 735.0,
-        savings_vs_baseline: '28.5%',
-        vehicle_used: 1,
-        status: 'success'
-      })
+      alert(`Network error: ${error.message}`)
     } finally {
       setIsLoading(false)
     }
@@ -98,8 +90,8 @@ export default function RoutesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">بهینه‌سازی مسیرها</h1>
-          <p className="text-gray-600 mt-1">برنامه‌ریزی مسیرهای تحویل بهینه با استفاده از هوش مصنوعی</p>
+          <h1 className="text-3xl font-bold text-gray-900">Route Optimization</h1>
+          <p className="text-gray-600 mt-1">Optimal delivery route planning using AI</p>
         </div>
       </div>
 
@@ -107,19 +99,19 @@ export default function RoutesPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
-            <CardTitle>پارامترهای مسیر</CardTitle>
+            <CardTitle>Route Parameters</CardTitle>
             <CardDescription>
-              تنظیم پارامترهای بهینه‌سازی مسیر تحویل
+              Configure delivery route optimization parameters
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                انبار مبدأ
+                Starting Depot
               </label>
               <Select value={depotId} onValueChange={setDepotId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="انتخاب انبار مبدأ..." />
+                  <SelectValue placeholder="Select starting depot..." />
                 </SelectTrigger>
                 <SelectContent>
                   {branches.map(branch => (
@@ -131,17 +123,20 @@ export default function RoutesPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                مقاصد تحویل
+                Delivery Destinations
               </label>
-              <div className="flex space-x-2 space-x-reverse mb-2">
-                <Input
-                  type="text"
-                  placeholder="نام شعبه مقصد..."
-                  value={newDestination}
-                  onChange={(e) => setNewDestination(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && addDestination()}
-                />
-                <Button onClick={addDestination}>افزودن</Button>
+              <div className="flex space-x-2 mb-2">
+                <Select value={newDestination} onValueChange={setNewDestination}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Add destination branch..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branches.filter(b => b !== depotId && !destinations.includes(b)).map(branch => (
+                      <SelectItem key={branch} value={branch}>{branch}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button onClick={addDestination} disabled={!newDestination}>Add</Button>
               </div>
               <div className="flex flex-wrap gap-2">
                 {destinations.map(dest => (
@@ -155,22 +150,22 @@ export default function RoutesPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  ظرفیت وسیله نقلیه
+                  Vehicle Capacity
                 </label>
                 <Input
                   type="number"
-                  value={vehicleCapacity}
-                  onChange={(e) => setVehicleCapacity(parseInt(e.target.value))}
+                  value={Number.isNaN(vehicleCapacity) ? '' : vehicleCapacity}
+                  onChange={(e) => setVehicleCapacity(parseInt(e.target.value) || 0)}
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  حداکثر زمان (ساعت)
+                  Max Time (Hours)
                 </label>
                 <Input
                   type="number"
-                  value={maxTimeHours}
-                  onChange={(e) => setMaxTimeHours(parseInt(e.target.value))}
+                  value={Number.isNaN(maxTimeHours) ? '' : maxTimeHours}
+                  onChange={(e) => setMaxTimeHours(parseInt(e.target.value) || 0)}
                 />
               </div>
             </div>
@@ -181,11 +176,11 @@ export default function RoutesPage() {
               className="w-full"
             >
               {isLoading ? (
-                'در حال بهینه‌سازی...'
+                'Optimizing...'
               ) : (
                 <>
-                  <Navigation className="h-4 w-4 ml-2" />
-                  بهینه‌سازی مسیر
+                  <Navigation className="h-4 w-4 mr-2" />
+                  Optimize Route
                 </>
               )}
             </Button>
@@ -195,9 +190,9 @@ export default function RoutesPage() {
         {/* Route Visualization */}
         <Card>
           <CardHeader>
-            <CardTitle>نقشه مسیر</CardTitle>
+            <CardTitle>Route Map</CardTitle>
             <CardDescription>
-              نمایش گرافیکی مسیر بهینه
+              Graphical view of the optimal route
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -206,7 +201,7 @@ export default function RoutesPage() {
                 <div className="bg-gray-100 rounded-lg p-4 h-64 flex items-center justify-center">
                   <div className="text-center">
                     <MapPin className="h-12 w-12 text-blue-600 mx-auto mb-2" />
-                    <p className="text-gray-600">نقشه مسیر بهینه</p>
+                    <p className="text-gray-600">Optimal Route Map</p>
                     <p className="text-sm text-gray-500 mt-1">
                       {routePlan.sequence.join(' → ')}
                     </p>
@@ -215,20 +210,20 @@ export default function RoutesPage() {
 
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div className="flex items-center">
-                    <Route className="h-4 w-4 text-blue-600 ml-2" />
-                    <span>مسافت: {routePlan.total_distance_km} کیلومتر</span>
+                    <Route className="h-4 w-4 text-blue-600 mr-2" />
+                    <span>Distance: {routePlan.total_distance_km} km</span>
                   </div>
                   <div className="flex items-center">
-                    <Clock className="h-4 w-4 text-green-600 ml-2" />
-                    <span>زمان: {routePlan.total_time_hours.toFixed(1)} ساعت</span>
+                    <Clock className="h-4 w-4 text-green-600 mr-2" />
+                    <span>Time: {routePlan.total_time_hours.toFixed(1)} hours</span>
                   </div>
                   <div className="flex items-center">
-                    <DollarSign className="h-4 w-4 text-purple-600 ml-2" />
-                    <span>هزینه: {routePlan.total_cost_usd.toFixed(0)} تومان</span>
+                    <DollarSign className="h-4 w-4 text-purple-600 mr-2" />
+                    <span>Cost: ${routePlan.total_cost_usd.toFixed(0)}</span>
                   </div>
                   <div className="flex items-center">
-                    <Truck className="h-4 w-4 text-orange-600 ml-2" />
-                    <span>پس‌انداز: {routePlan.savings_vs_baseline}</span>
+                    <Truck className="h-4 w-4 text-orange-600 mr-2" />
+                    <span>Savings: {routePlan.savings_vs_baseline}</span>
                   </div>
                 </div>
               </div>
@@ -236,7 +231,7 @@ export default function RoutesPage() {
               <div className="h-64 flex items-center justify-center text-gray-500">
                 <div className="text-center">
                   <MapPin className="h-12 w-12 mx-auto mb-2 text-gray-300" />
-                  <p>ابتدا پارامترهای مسیر را تنظیم کنید</p>
+                  <p>First configure route parameters</p>
                 </div>
               </div>
             )}
@@ -248,27 +243,26 @@ export default function RoutesPage() {
       {routePlan && (
         <Card>
           <CardHeader>
-            <CardTitle>جزئیات مسیر</CardTitle>
+            <CardTitle>Route Details</CardTitle>
             <CardDescription>
-              توالی توقف‌ها و آمار مسیر بهینه
+              Stop sequence and optimal route statistics
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-6">
               {/* Route Sequence */}
               <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-3">ترتیب توقف‌ها</h4>
+                <h4 className="text-sm font-medium text-gray-700 mb-3">Stop Sequence</h4>
                 <div className="flex flex-wrap items-center gap-2">
                   {routePlan.sequence.map((stop, index) => (
                     <div key={index} className="flex items-center">
-                      <div className={`flex items-center justify-center w-8 h-8 rounded-full ${
-                        index === 0 ? 'bg-green-500 text-white' :
+                      <div className={`flex items-center justify-center w-8 h-8 rounded-full ${index === 0 ? 'bg-green-500 text-white' :
                         index === routePlan.sequence.length - 1 ? 'bg-red-500 text-white' :
-                        'bg-blue-500 text-white'
-                      }`}>
-                        {index === 0 ? 'ش' : index === routePlan.sequence.length - 1 ? 'پ' : index}
+                          'bg-blue-500 text-white'
+                        }`}>
+                        {index === 0 ? 'S' : index === routePlan.sequence.length - 1 ? 'E' : index}
                       </div>
-                      <span className="text-sm mr-2">{stop}</span>
+                      <span className="text-sm ml-2">{stop}</span>
                       {index < routePlan.sequence.length - 1 && (
                         <div className="mx-2 text-gray-400">→</div>
                       )}
@@ -281,40 +275,40 @@ export default function RoutesPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-blue-50 p-4 rounded-lg">
                   <div className="flex items-center mb-2">
-                    <Route className="h-5 w-5 text-blue-600 ml-2" />
-                    <span className="font-medium text-blue-900">مسافت کل</span>
+                    <Route className="h-5 w-5 text-blue-600 mr-2" />
+                    <span className="font-medium text-blue-900">Total Distance</span>
                   </div>
                   <div className="text-2xl font-bold text-blue-600">
-                    {routePlan.total_distance_km} کیلومتر
+                    {routePlan.total_distance_km} km
                   </div>
                   <div className="text-sm text-blue-700 mt-1">
-                    مسیر بهینه شده
+                    Optimized route
                   </div>
                 </div>
 
                 <div className="bg-green-50 p-4 rounded-lg">
                   <div className="flex items-center mb-2">
-                    <Clock className="h-5 w-5 text-green-600 ml-2" />
-                    <span className="font-medium text-green-900">زمان تخمینی</span>
+                    <Clock className="h-5 w-5 text-green-600 mr-2" />
+                    <span className="font-medium text-green-900">Estimated Time</span>
                   </div>
                   <div className="text-2xl font-bold text-green-600">
-                    {routePlan.total_time_hours.toFixed(1)} ساعت
+                    {routePlan.total_time_hours.toFixed(1)} hours
                   </div>
                   <div className="text-sm text-green-700 mt-1">
-                    شامل زمان تحویل
+                    Includes delivery time
                   </div>
                 </div>
 
                 <div className="bg-purple-50 p-4 rounded-lg">
                   <div className="flex items-center mb-2">
-                    <DollarSign className="h-5 w-5 text-purple-600 ml-2" />
-                    <span className="font-medium text-purple-900">پس‌انداز</span>
+                    <DollarSign className="h-5 w-5 text-purple-600 mr-2" />
+                    <span className="font-medium text-purple-900">Savings</span>
                   </div>
                   <div className="text-2xl font-bold text-purple-600">
                     {routePlan.savings_vs_baseline}
                   </div>
                   <div className="text-sm text-purple-700 mt-1">
-                    نسبت به مسیر پایه
+                    Compared to baseline
                   </div>
                 </div>
               </div>
@@ -325,5 +319,3 @@ export default function RoutesPage() {
     </div>
   )
 }
-
-

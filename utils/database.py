@@ -23,8 +23,17 @@ class DatabaseConnection:
     def connect(self, uri: str = "mongodb://localhost:27017", db_name: str = "pharma_supply_chain") -> Database:
         """Connect to MongoDB"""
         try:
-            self.client = MongoClient(uri)
+            self.client = MongoClient(
+                uri,
+                maxPoolSize=50,
+                serverSelectionTimeoutMS=5000
+            )
             self.db = self.client[db_name]
+
+            # Step 6 - Create indexes
+            self.db.sales_history.create_index([("drug_id", 1), ("date", -1)])
+            self.db.inventory.create_index([("drug_id", 1), ("branch_id", 1)])
+            self.db.drugs.create_index([("id", 1)])
 
             # Test connection
             self.client.admin.command('ping')
@@ -87,7 +96,9 @@ class DataAccess:
                 {"$match": query},
                 {
                     "$group": {
-                        "_id": "$date",
+                        "_id": {
+                        "$dateToString": {"format": "%Y-%m-%d", "date": "$date"}
+                    },
                         "quantity": {"$sum": "$quantity"},
                         "drug_id": {"$first": "$drug_id"},
                         "drug_name": {"$first": "$drug_name"},
@@ -189,7 +200,9 @@ def get_sales_data(drug_id: str, branch_id: Optional[str] = None, days: int = 36
             {"$match": match_stage},
             {
                 "$group": {
-                    "_id": "$date",
+                    "_id": {
+                        "$dateToString": {"format": "%Y-%m-%d", "date": "$date"}
+                    },
                     "quantity": {"$sum": "$quantity"},
                     "drug_id": {"$first": "$drug_id"},
                     "drug_name": {"$first": "$drug_name"},
